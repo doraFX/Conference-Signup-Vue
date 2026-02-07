@@ -1,0 +1,2106 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+	<head>
+		<meta charset="utf-8" />
+		<title>示例会议（离线演示版）</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+		<meta name="description" content="一个已脱敏的会议报名用户端示例，包含邀请函、报名、日程、交通与入场码流程。" />
+		<meta name="theme-color" content="#0f172a" />
+
+		<script src="js/tailwindcss.3.4.17.js"></script>
+		<script>
+			tailwind.config = {
+				theme: {
+					extend: {
+						colors: {
+							brand: "#2563eb",
+							accent: "#7c3aed",
+							bgsoft: "#f8fafc",
+							textmain: "#0f172a",
+							bordersoft: "#dbe2ea",
+							danger: "#dc2626",
+							success: "#16a34a",
+						},
+						borderRadius: {
+							card: "1rem",
+							btn: "0.875rem"
+						},
+						boxShadow: {
+							card: "0 10px 30px rgba(15,23,42,.08)",
+							cardmd: "0 12px 34px rgba(15,23,42,.12)",
+						},
+						fontSize: {
+							h1: ["1.75rem", {
+								lineHeight: "2.2rem",
+								fontWeight: "700"
+							}],
+							h2: ["1.375rem", {
+								lineHeight: "1.9rem",
+								fontWeight: "700"
+							}],
+							body: ["0.95rem", {
+								lineHeight: "1.6rem"
+							}],
+							note: ["0.8125rem", {
+								lineHeight: "1.3rem"
+							}],
+						},
+						transitionTimingFunction: {
+							spring: "cubic-bezier(0.34, 1.56, 0.64, 1)",
+						},
+					},
+				},
+			};
+		</script>
+
+		<link rel="stylesheet" href="css/style.css" />
+		<link rel="stylesheet" href="css/remixicon.css" />
+		<link rel="stylesheet" href="css/fontawesome.min.css" />
+		<script src="js/vue.global.prod.js"></script>
+
+		<script src="js/utils.js"></script>
+		<script src="js/start.js"></script>
+		<script src="js/login.js"></script>
+		<script src="js/check.js"></script>
+
+		<script src="js/qrcode.min.js"></script>
+		<script src="js/md5.min.js"></script>
+
+		<script src="js/alert-custom.js"></script>
+		<link rel="stylesheet" href="css/alert-custom.css" />
+
+		<script>
+			const CONFERENCE_INFO = {
+				title: "示例会议标题",
+				subtitle: "示例会议小标题",
+				meetings: [{
+						id: "m1",
+						city: "示例会场A",
+						date: "2025年9月16日",
+						dateDisplay: "2025 年 9 月 16 日",
+						hotelDates: ["9.16晚上"],
+					},
+					{
+						id: "m2",
+						city: "示例会场B",
+						date: "2025年9月22日",
+						dateDisplay: "2025 年 9 月 22 日",
+						hotelDates: ["9.22晚上"],
+					},
+				],
+			};
+
+			const API_CONFIG = {
+				BASE_URL: "OFFLINE_DISABLED"
+			};
+
+			function apiUrl(path) {
+				return `${API_CONFIG.BASE_URL}${path}`;
+			}
+
+			function clearAllClientState() {
+				document.cookie.split(";").forEach((cookiePair) => {
+					const name = cookiePair.split("=")[0]?.trim();
+					if (!name) return;
+					document.cookie = `${name}=; path=/; max-age=0`;
+				});
+				localStorage.clear();
+			}
+
+			function refresh() {
+				clearAllClientState();
+				window.location.reload();
+			}
+
+			// 修复移动端地址栏折叠导致的 100vh 抖动问题
+			function setRealVh() {
+				document.documentElement.style.setProperty("--vh", window.innerHeight * 0.01 + "px");
+			}
+			setRealVh();
+			window.addEventListener("resize", setRealVh);
+		</script>
+
+		<style>
+			/* 轻提示 */
+			.soft-exit-toast {
+				position: fixed;
+				left: 50%;
+				bottom: 24px;
+				transform: translateX(-50%);
+				background: #0f172a;
+				color: #fff;
+				padding: 8px 14px;
+				border-radius: 999px;
+				opacity: 0;
+				transition: all .2s;
+				z-index: 9999
+			}
+
+			.soft-exit-toast.show {
+				opacity: .95
+			}
+
+			/* 基础过渡（你原 css 里若已有，可删） */
+			.slide-left-enter-active,
+			.slide-left-leave-active,
+			.slide-right-enter-active,
+			.slide-right-leave-active {
+				transition: all .28s cubic-bezier(.25, 1, .5, 1)
+			}
+
+			.slide-left-enter-from {
+				opacity: 0;
+				transform: translateX(14px)
+			}
+
+			.slide-left-leave-to {
+				opacity: 0;
+				transform: translateX(-14px)
+			}
+
+			.slide-right-enter-from {
+				opacity: 0;
+				transform: translateX(-14px)
+			}
+
+			.slide-right-leave-to {
+				opacity: 0;
+				transform: translateX(14px)
+			}
+		</style>
+	</head>
+
+	<body class="bg-bgsoft text-textmain font-sans">
+		<!-- 微信场景下的分享文案占位（兼容历史行为，视觉上隐藏） -->
+		<!-- 如果你没有在微信公众号做认证,那么分享卡片大概率不好用,这里是欺骗微信抓取的时候抓到这段文字和图片 -->
+		<!-- Fucking WeChat! Fucking Tencent! Fucking 张小龙! -->
+		<div class="cheat-wechat" style="opacity: 0; z-index: -10; position: fixed; width: 0; height: 0;">
+			<p>点击链接，即刻登记！</p>
+			<p>&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;
+			</p>
+			<p>&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;
+			</p>
+			<p>&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;
+			</p>
+			<p>&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;
+			</p>
+			<p>&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;
+			</p>
+			<img src="img/logo.svg" alt="会议 LOGO" />
+		</div>
+
+		<div class="container mx-auto max-w-md">
+			<div id="app">
+				<div class="page-wrapper">
+					<transition :name="transitionName" mode="out-in">
+						<div class="page" :key="currentPage">
+
+
+							<!-- ========================= HOME ========================= -->
+							<template v-if="currentPage==='home'">
+								<div class="absolute inset-x-0 top-0 w-full aspect-[15/11] overflow-hidden">
+									<img src="img/bg.png" alt="" class="h-full w-full object-cover" />
+									<div
+										class="pointer-events-none absolute inset-0 bg-gradient-to-b from-slate-950/55 via-slate-950/30 to-white/0">
+									</div>
+								</div>
+
+								<div
+									class="relative px-0 pt-10 pb-6 w-full aspect-[15/11] text-center text-white flex flex-col items-center justify-between">
+									<div class="relative flex h-10 items-center justify-center">
+										<img src="img/logo.svg" alt="Demo Logo"
+											class="h-full drop-shadow-[0_10px_30px_rgba(0,0,0,0.25)]" />
+									</div>
+
+									<div class="relative flex w-full flex-col items-center justify-center px-6">
+										<h1
+											class="m-0 text-[28px] leading-tight font-semibold tracking-tight drop-shadow-[0_12px_30px_rgba(0,0,0,0.35)] mb-2">
+											{{ conferenceInfo.title }}
+										</h1>
+										<h2
+											class="m-0 text-[14px] leading-snug font-normal tracking-wide text-white/80">
+											{{ conferenceInfo.subtitle }}
+										</h2>
+									</div>
+
+									<div class="relative flex items-center justify-center">
+										<template v-if="selectedSession">
+											<div class="group flex cursor-pointer select-none items-center gap-2 rounded-full border border-white/18 bg-white/10 px-6 py-2.5 backdrop-blur-xl shadow-[0_10px_30px_rgba(0,0,0,0.18)] transition-all hover:border-white/30 hover:bg-white/14 active:scale-[0.98]"
+												@click="openSessionPicker">
+												<div class="flex flex-col items-start gap-0.5">
+													<div class="flex items-center gap-1.5 text-white">
+														<i class="ri-calendar-line text-sm w-4"></i>
+														<span
+															class="text-sm tracking-wide">{{ selectedSession.date }}</span>
+													</div>
+													<div class="flex items-center gap-1.5 text-white">
+														<i class="ri-map-pin-line text-sm w-4"></i>
+														<span
+															class="text-sm tracking-wide">{{ selectedSession.city }}</span>
+													</div>
+												</div>
+												<div class="h-6 w-px bg-white/18"></div>
+												<div
+													class="flex items-center justify-center text-white/80 transition-transform duration-300 group-hover:rotate-180">
+													<i class="ri-refresh-line text-lg"></i>
+												</div>
+											</div>
+										</template>
+
+										<template v-else>
+											<button
+												class="flex cursor-pointer select-none items-center gap-2 rounded-full border border-white/18 bg-white/90 px-6 py-2.5 text-sm font-medium text-slate-900 shadow-[0_10px_26px_rgba(0,0,0,0.12)] backdrop-blur-xl transition hover:bg-white active:scale-[0.98]"
+												@click="openSessionPicker">
+												<i class="ri-calendar-event-line"></i>
+												请选择场次
+											</button>
+										</template>
+									</div>
+								</div>
+
+								<div
+									class="grid justify-center gap-3.5 pt-5 px-4 [grid-template-columns:repeat(3,108px)] max-[375px]:[grid-template-columns:repeat(3,102px)]">
+									<!-- item 1 -->
+									<div class="group flex h-[108px] w-[108px] cursor-pointer flex-col items-center rounded-2xl border border-slate-200/70 bg-white/90 text-center text-[14px] text-slate-800 shadow-[0_10px_28px_rgba(2,6,23,0.06)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:shadow-[0_18px_40px_rgba(2,6,23,0.10)] active:translate-y-0 active:scale-[0.98]"
+										@click="go('invite')">
+										<div
+											class="mt-[26px] flex h-[34px] w-[34px] items-center justify-center rounded-xl border border-slate-200/70 bg-gradient-to-b from-slate-50 to-white text-[22px] text-slate-900 shadow-[0_8px_18px_rgba(2,6,23,0.08)]">
+											<i class="ri-mail-open-line"></i>
+										</div>
+										<div
+											class="mt-2 flex h-6 w-full items-center justify-center text-[13px] font-medium tracking-wide text-slate-800">
+											邀请函
+										</div>
+									</div>
+
+									<!-- item 2 -->
+									<div class="group flex h-[108px] w-[108px] cursor-pointer flex-col items-center rounded-2xl border border-slate-200/70 bg-white/90 text-center text-[14px] text-slate-800 shadow-[0_10px_28px_rgba(2,6,23,0.06)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:shadow-[0_18px_40px_rgba(2,6,23,0.10)] active:translate-y-0 active:scale-[0.98]"
+										@click="enterSignup">
+										<div
+											class="mt-[26px] flex h-[34px] w-[34px] items-center justify-center rounded-xl border border-slate-200/70 bg-gradient-to-b from-slate-50 to-white text-[22px] text-slate-900 shadow-[0_8px_18px_rgba(2,6,23,0.08)]">
+											<i class="ri-coupon-line"></i>
+										</div>
+										<div
+											class="mt-2 flex h-6 w-full items-center justify-center text-[13px] font-medium tracking-wide text-slate-800">
+											{{
+												(selectedSessionKey === 'SH' && getCookie('checkinSH') === '1') ||
+												(selectedSessionKey === 'JN' && getCookie('checkinJN') === '1')
+													? '登记修改'
+													: '参会登记'
+											}}
+										</div>
+									</div>
+
+									<!-- item 3 -->
+									<div class="group flex h-[108px] w-[108px] cursor-pointer flex-col items-center rounded-2xl border border-slate-200/70 bg-white/90 text-center text-[14px] text-slate-800 shadow-[0_10px_28px_rgba(2,6,23,0.06)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:shadow-[0_18px_40px_rgba(2,6,23,0.10)] active:translate-y-0 active:scale-[0.98]"
+										@click="go('agenda')">
+										<div
+											class="mt-[26px] flex h-[34px] w-[34px] items-center justify-center rounded-xl border border-slate-200/70 bg-gradient-to-b from-slate-50 to-white text-[22px] text-slate-900 shadow-[0_8px_18px_rgba(2,6,23,0.08)]">
+											<i class="ri-calendar-2-line"></i>
+										</div>
+										<div
+											class="mt-2 flex h-6 w-full items-center justify-center text-[13px] font-medium tracking-wide text-slate-800">
+											会议日程
+										</div>
+									</div>
+
+									<!-- item 4 -->
+									<div class="group flex h-[108px] w-[108px] cursor-pointer flex-col items-center rounded-2xl border border-slate-200/70 bg-white/90 text-center text-[14px] text-slate-800 shadow-[0_10px_28px_rgba(2,6,23,0.06)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:shadow-[0_18px_40px_rgba(2,6,23,0.10)] active:translate-y-0 active:scale-[0.98]"
+										@click="go('hotel')">
+										<div
+											class="mt-[26px] flex h-[34px] w-[34px] items-center justify-center rounded-xl border border-slate-200/70 bg-gradient-to-b from-slate-50 to-white text-[22px] text-slate-900 shadow-[0_8px_18px_rgba(2,6,23,0.08)]">
+											<i class="ri-hotel-line"></i>
+										</div>
+										<div
+											class="mt-2 flex h-6 w-full items-center justify-center text-[13px] font-medium tracking-wide text-slate-800">
+											交通路线
+										</div>
+									</div>
+
+									<!-- item 5 -->
+									<div class="group flex h-[108px] w-[108px] cursor-pointer flex-col items-center rounded-2xl border border-slate-200/70 bg-white/90 text-center text-[14px] text-slate-800 shadow-[0_10px_28px_rgba(2,6,23,0.06)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:shadow-[0_18px_40px_rgba(2,6,23,0.10)] active:translate-y-0 active:scale-[0.98]"
+										@click="enterAccess">
+										<div
+											class="mt-[26px] flex h-[34px] w-[34px] items-center justify-center rounded-xl border border-slate-200/70 bg-gradient-to-b from-slate-50 to-white text-[22px] text-slate-900 shadow-[0_8px_18px_rgba(2,6,23,0.08)]">
+											<i class="ri-qr-code-line"></i>
+										</div>
+										<div
+											class="mt-2 flex h-6 w-full items-center justify-center text-[13px] font-medium tracking-wide text-slate-800">
+											入场码
+										</div>
+									</div>
+								</div>
+							</template>
+
+							<!-- ========================= INVITE ========================= -->
+							<template v-else-if="currentPage==='invite'">
+								<div id="page-invite" class="relative w-full h-full bg-slate-950">
+									<div class="relative flex w-full h-20 items-center">
+										<div class="ml-[15px] flex h-[50px] w-[50px] items-center justify-center rounded-full border border-white/15 bg-white/10 text-[28px] text-white backdrop-blur-xl shadow-[0_10px_26px_rgba(0,0,0,0.18)] transition hover:bg-white/14 active:scale-[0.96] z-[9999]"
+											@click="go('home')">
+											<i class="ri-arrow-left-s-line pr-[2px]"></i>
+										</div>
+										<div
+											class="pointer-events-none absolute left-1/2 -translate-x-1/2 text-[18px] font-semibold tracking-wide text-white drop-shadow-[0_10px_26px_rgba(0,0,0,0.35)]">
+											邀请函
+										</div>
+									</div>
+
+									<div
+										class="absolute inset-0 top-0 w-full h-full overflow-y-scroll overscroll-contain">
+										<img src="" alt="" class="w-full h-auto" />
+									</div>
+								</div>
+							</template>
+
+
+							<!-- ========================= SIGNUP ENTRY (PHONE LOGIN) ========================= -->
+							<template v-else-if="currentPage==='signupAuth'">
+								<div class="absolute inset-x-0 top-0 h-[300px] w-full overflow-hidden">
+									<img src="img/bg.png" alt="" class="h-full w-full object-cover scale-[1.04]" />
+									<div
+										class="pointer-events-none absolute inset-0 bg-gradient-to-b from-slate-950/60 via-slate-950/35 to-white/0">
+									</div>
+								</div>
+
+								<div id="page-signup" class="relative h-full w-full">
+									<div class="relative flex h-20 items-center">
+										<button type="button"
+											class="ml-4 flex h-12 w-12 items-center justify-center rounded-full border border-white/15 bg-white/10 text-[28px] text-white backdrop-blur-xl shadow-[0_10px_26px_rgba(0,0,0,0.18)] transition hover:bg-white/14 active:scale-[0.96]"
+											@click="go('home')">
+											<i class="ri-arrow-left-s-line pr-[2px]"></i>
+										</button>
+
+										<div
+											class="pointer-events-none absolute left-1/2 -translate-x-1/2 text-[18px] font-semibold tracking-wide text-white drop-shadow-[0_10px_26px_rgba(0,0,0,0.35)]">
+											{{ getCookie('offline_status') === '3' ? '登记修改' : '参会登记' }}
+										</div>
+									</div>
+
+									<div
+										class="absolute left-1/2 top-[92px] flex h-[48px] w-[140px] -translate-x-1/2 items-center justify-center rounded-2xl border border-white/12 bg-white/8 backdrop-blur-xl shadow-[0_14px_34px_rgba(0,0,0,0.16)]">
+										<img src="img/logo.svg" alt="Demo Logo"
+											class="h-[26px] drop-shadow-[0_12px_26px_rgba(0,0,0,0.28)]" />
+									</div>
+
+									<div
+										class="relative mx-auto mt-[128px] w-[calc(100%-36px)] overflow-hidden rounded-3xl border border-slate-200/70 bg-white backdrop-blur-xl shadow-[0_18px_55px_rgba(2,6,23,0.12)]">
+										<div class="flex h-[60px] bg-gradient-to-b from-slate-50 to-white">
+											<div class="flex-1 cursor-pointer select-none rounded-t-3xl py-2 text-center text-[15px] flex items-center justify-center transition"
+												:class="[signupType==='phone' ? 'bg-white font-semibold text-slate-900' : 'text-slate-500 hover:text-slate-700']"
+												@click="signupType='phone'">
+												手机号快捷登录
+											</div>
+										</div>
+
+										<div v-if="signupType==='phone'" class="px-5 pb-6 pt-2">
+											<div
+												class="mt-0.5 flex w-full items-center rounded-2xl border border-slate-200/70 bg-white px-4 py-3.5 shadow-[0_8px_22px_rgba(2,6,23,0.05)] transition focus-within:border-slate-300 focus-within:shadow-[0_12px_30px_rgba(2,6,23,0.08)]">
+												<i class="ri-smartphone-line mr-2 text-[18px] text-slate-500"></i>
+												<input type="tel" placeholder="请输入手机号" :disabled="isDisabled"
+													v-model.trim="form.mobile"
+													class="min-w-0 flex-1 appearance-none border-0 bg-transparent text-[15px] text-slate-900 outline-none placeholder:text-slate-400 disabled:opacity-60" />
+											</div>
+
+											<div
+												class="mt-3 flex w-full items-center rounded-2xl border border-slate-200/70 bg-white px-4 py-3.5 shadow-[0_8px_22px_rgba(2,6,23,0.05)] transition focus-within:border-slate-300 focus-within:shadow-[0_12px_30px_rgba(2,6,23,0.08)]">
+												<i class="ri-shield-check-line mr-2 text-[18px] text-slate-500"></i>
+												<input type="text" placeholder="请输入验证码" :disabled="isDisabled"
+													v-model.trim="form.code"
+													class="min-w-0 flex-1 appearance-none border-0 bg-transparent text-[15px] text-slate-900 outline-none placeholder:text-slate-400 disabled:opacity-60" />
+												<button type="button"
+													class="ml-3 w-[96px] shrink-0 rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-[13px] font-medium tracking-wide text-slate-800 shadow-[0_8px_18px_rgba(2,6,23,0.06)] transition hover:bg-white active:scale-[0.98] disabled:opacity-60"
+													@click="getCode">
+													{{ codeCountdown > 0 ? codeCountdown + '秒后重试' : '获取验证码' }}
+												</button>
+											</div>
+
+											<p class="mt-3 flex h-6 items-center gap-1 text-[12px] text-slate-500">
+												<span class="text-slate-400">ⓘ</span>
+												未注册手机号将自动创建新账号。
+											</p>
+
+											<button
+												class="mt-3 flex h-12 w-full items-center justify-center rounded-full bg-slate-950 text-[15px] font-semibold tracking-wide text-white shadow-[0_16px_40px_rgba(2,6,23,0.22)] transition enabled:hover:bg-slate-900 enabled:active:bg-slate-950 enabled:active:scale-[0.985] disabled:bg-slate-300 disabled:cursor-not-allowed disabled:opacity-70"
+												:class="{ 'opacity-70 cursor-not-allowed': loginLock }"
+												:disabled="loginLock || isDisabled" @click="submitSignup">
+												{{ loginLock ? "登录中..." : "继续" }}
+											</button>
+										</div>
+									</div>
+								</div>
+							</template>
+
+
+							<!-- ========================= LOGIN (VIEW ACCESS) ========================= -->
+							<template v-else-if="currentPage==='login'">
+								<div
+									class="absolute w-full h-[300px] text-center text-white bg-transparent overflow-hidden">
+									<img src="img/bg.png" alt="" class="w-full h-full object-cover scale-[1.04]" />
+									<div
+										class="pointer-events-none absolute inset-0 bg-gradient-to-b from-slate-950/60 via-slate-950/35 to-white/0">
+									</div>
+								</div>
+
+								<div id="page-login" class="relative w-full h-full">
+									<div class="relative flex w-full h-20 items-center">
+										<div class="ml-[15px] flex h-[50px] w-[50px] items-center justify-center rounded-full border border-white/15 bg-white/10 text-[28px] text-white backdrop-blur-xl shadow-[0_10px_26px_rgba(0,0,0,0.18)] transition hover:bg-white/14 active:scale-[0.96] z-[9999]"
+											@click="go('home')">
+											<i class="ri-arrow-left-s-line pr-[2px]"></i>
+										</div>
+										<div
+											class="pointer-events-none absolute left-1/2 -translate-x-1/2 text-[18px] font-semibold tracking-wide text-white drop-shadow-[0_10px_26px_rgba(0,0,0,0.35)]">
+											查看入场码
+										</div>
+									</div>
+
+									<div
+										class="absolute left-1/2 top-[92px] flex h-[48px] w-[140px] -translate-x-1/2 items-center justify-center rounded-2xl border border-white/12 bg-white/8 backdrop-blur-xl shadow-[0_14px_34px_rgba(0,0,0,0.16)]">
+										<img src="img/logo.svg" alt="Demo Logo"
+											class="h-[26px] drop-shadow-[0_12px_26px_rgba(0,0,0,0.28)]" />
+									</div>
+
+									<div
+										class="relative bg-white backdrop-blur-xl rounded-3xl border border-slate-200/70 shadow-[0_18px_55px_rgba(2,6,23,0.12)] w-[calc(100%-36px)] left-[18px] top-[128px] transition-all duration-150 ease-out pb-6 overflow-hidden">
+										<div
+											class="flex h-[60px] bg-gradient-to-b from-slate-50 to-white rounded-t-3xl [-webkit-tap-highlight-color:transparent]">
+											<div class="flex-1 cursor-pointer select-none rounded-t-3xl py-2 text-center text-[15px] flex items-center justify-center transition"
+												:class="[loginType==='phone' ? 'bg-white font-semibold text-slate-900' : 'text-slate-500 hover:text-slate-700']"
+												@click="loginType='phone'">
+												手机号快捷登录
+											</div>
+										</div>
+
+										<div v-if="loginType==='phone'" class="px-[18px] pt-2">
+											<div
+												class="flex items-center rounded-2xl border border-slate-200/70 bg-white px-4 py-3.5 mt-1 relative w-full box-border shadow-[0_8px_22px_rgba(2,6,23,0.05)] transition focus-within:border-slate-300 focus-within:shadow-[0_12px_30px_rgba(2,6,23,0.08)]">
+												<i
+													class="ri-smartphone-line text-[18px] mr-2 shrink-0 text-slate-500"></i>
+												<input type="tel" placeholder="请输入手机号" :disabled="isDisabled"
+													v-model.trim="loginForm.mobile"
+													class="appearance-none flex-1 min-w-0 max-w-[calc(100%-120px)] border-0 outline-none text-[15px] bg-transparent text-slate-900 placeholder:text-slate-400 disabled:opacity-60" />
+											</div>
+
+											<div
+												class="flex items-center rounded-2xl border border-slate-200/70 bg-white px-4 py-3.5 mt-3 relative w-full box-border shadow-[0_8px_22px_rgba(2,6,23,0.05)] transition focus-within:border-slate-300 focus-within:shadow-[0_12px_30px_rgba(2,6,23,0.08)]">
+												<i
+													class="ri-shield-check-line text-[18px] mr-2 shrink-0 text-slate-500"></i>
+												<input type="text" placeholder="请输入验证码" :disabled="isDisabled"
+													v-model.trim="loginForm.code"
+													class="appearance-none flex-1 min-w-0 max-w-[calc(100%-120px)] border-0 outline-none text-[15px] bg-transparent text-slate-900 placeholder:text-slate-400 disabled:opacity-60" />
+												<button type="button"
+													class="ml-3 shrink-0 basis-[96px] rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-[13px] font-medium tracking-wide text-slate-800 shadow-[0_8px_18px_rgba(2,6,23,0.06)] whitespace-nowrap transition hover:bg-white active:scale-[0.98] disabled:opacity-60"
+													@click="getLoginCode">
+													{{ codeCountdown > 0 ? codeCountdown + '秒后重试' : '获取验证码' }}
+												</button>
+											</div>
+
+											<p class="mt-3 text-[12px] text-slate-500 h-6 flex items-center gap-1">
+												<span class="text-slate-400">ⓘ</span> 未注册手机号将自动创建新账号。
+											</p>
+
+											<button
+												class="mt-3 w-full h-11 rounded-full flex items-center justify-center bg-slate-950 text-white border-0 text-[15px] font-semibold tracking-wide cursor-pointer shadow-[0_16px_40px_rgba(2,6,23,0.22)] transition enabled:hover:bg-slate-900 enabled:hover:shadow-[0_18px_46px_rgba(2,6,23,0.26)] enabled:active:bg-slate-950 enabled:active:shadow-[0_12px_30px_rgba(2,6,23,0.20)] enabled:active:scale-[0.985] disabled:bg-slate-300 disabled:cursor-not-allowed disabled:opacity-70"
+												:class="[loginLock ? 'bg-slate-300 cursor-not-allowed opacity-70 hover:bg-slate-300 hover:shadow-none active:scale-100 active:shadow-none' : '']"
+												:disabled="loginLock || isDisabled" @click="submitLogin">
+												{{ loginLock ? "登录中..." : "继续" }}
+											</button>
+										</div>
+									</div>
+								</div>
+							</template>
+
+
+							<!-- ========================= SIGNUP LIST SH/JN ========================= -->
+							<template v-else-if="currentPage==='signup'">
+								<div
+									class="absolute w-full h-[300px] text-center text-white bg-transparent overflow-hidden">
+									<img src="img/bg.png" alt="" class="w-full h-full object-cover scale-[1.04]" />
+									<div
+										class="pointer-events-none absolute inset-0 bg-gradient-to-b from-slate-950/60 via-slate-950/35 to-white/0">
+									</div>
+								</div>
+
+								<div id="page-signup" class="w-full h-full relative">
+									<div class="relative flex w-full h-20 items-center">
+										<div class="ml-[15px] flex h-[50px] w-[50px] items-center justify-center rounded-full border border-white/15 bg-white/10 text-[28px] text-white backdrop-blur-xl shadow-[0_10px_26px_rgba(0,0,0,0.18)] transition hover:bg-white/14 active:scale-[0.96] z-[9999]"
+											@click="go('home')">
+											<i class="ri-arrow-left-s-line pr-[2px]"></i>
+										</div>
+										<div
+											class="pointer-events-none absolute left-1/2 -translate-x-1/2 text-[18px] font-semibold tracking-wide text-white drop-shadow-[0_10px_26px_rgba(0,0,0,0.35)]">
+											{{
+												(selectedSessionKey === 'SH' && getCookie('checkinSH') === '1') ||
+												(selectedSessionKey === 'JN' && getCookie('checkinJN') === '1')
+													? '登记修改'
+													: '参会登记'
+											}}
+										</div>
+									</div>
+
+									<div v-if="selectedSession"
+										class="relative w-[calc(100%-32px)] bg-white/70 backdrop-blur-xl border border-white/25 ml-4 rounded-3xl shadow-[0_16px_44px_rgba(2,6,23,0.10)] flex flex-col overflow-hidden">
+										<p
+											class="h-10 text-[13px] text-slate-700 font-medium flex items-center pl-5 pt-2 m-0 tracking-wide">
+											您预约参加的会议是：
+										</p>
+										<div class="flex items-center gap-4 justify-center pb-2">
+											<div
+												class="h-10 flex justify-center items-center gap-1.5 text-[13px] text-slate-800">
+												<i class="ri-map-pin-line text-slate-500"></i><span
+													class="font-semibold tracking-wide">{{ selectedSession.city }}</span>
+											</div>
+											<div
+												class="h-10 flex justify-center items-center gap-1.5 text-[13px] text-slate-800">
+												<i class="ri-calendar-line text-slate-500"></i><span
+													class="font-semibold tracking-wide">{{ selectedSession.date }}</span>
+											</div>
+											<button type="button" aria-label="切换会议场次"
+												class="h-10 w-10 flex items-center justify-center cursor-pointer rounded-full border border-slate-200/70 bg-white/70 text-slate-700 shadow-[0_10px_22px_rgba(2,6,23,0.08)] transition hover:bg-white active:scale-[0.96] [-webkit-tap-highlight-color:transparent]"
+												@click="openSessionPicker">
+												<i class="ri-loop-left-line"></i>
+											</button>
+										</div>
+									</div>
+
+									<div
+										class="w-[calc(100%-32px)] relative top-5 left-4 h-[calc(100%-270px)] max-[375px]:h-[calc(100%-260px)] overflow-y-auto [-webkit-overflow-scrolling:touch] rounded-3xl bg-white backdrop-blur-xl border border-slate-200/70 shadow-[0_18px_55px_rgba(2,6,23,0.12)]">
+										<div
+											class="h-10 text-[12px] text-slate-600 flex items-center gap-2 pl-4 pt-0.5 tracking-wide">
+											<i class="ri-information-line text-slate-500"></i> 请按真实情况填写以下内容
+										</div>
+
+										<button
+											class="w-[calc(100%-32px)] h-11 ml-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 text-slate-900 text-[14px] font-semibold cursor-pointer flex items-center justify-center gap-2 mb-3 shadow-[0_10px_26px_rgba(2,6,23,0.06)] transition hover:bg-white active:scale-[0.985] [-webkit-tap-highlight-color:transparent]"
+											@click="openCreateProfile">
+											<i class="ri-user-add-line text-slate-700"></i> 新增出席人员
+										</button>
+
+										<div v-if="attendees.length === 0"
+											class="h-[70px] flex flex-col items-center justify-center w-[calc(100%-32px)] ml-4 rounded-2xl text-[12px] text-slate-500 bg-slate-50 border border-dashed border-slate-200 text-center">
+											<div class="font-medium">还没有出席人员</div>
+											<div class="mt-0.5 text-slate-400">点击上方“新增出席人员”开始填写</div>
+										</div>
+
+										<div class="h-[calc(100%-96px)] overflow-y-scroll pb-1">
+											<div v-for="p in attendees" :key="fingerprint(p)"
+												class="w-[calc(100%-2rem)] mx-[1rem] mb-3 rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm transition hover:shadow-md">
+												<div class="flex items-start justify-between gap-3">
+													<div class="min-w-0">
+														<div class="flex items-center gap-2">
+															<div
+																class="truncate text-[15px] font-semibold text-slate-900">
+																{{ p.name }}
+															</div>
+
+															<span v-if="p.needHotel"
+																class="inline-flex items-center rounded-full bg-slate-900 px-2 py-0.5 text-[11px] font-medium text-white/95">
+																住宿
+															</span>
+															<span v-if="p.carNo"
+																class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-700">
+																车牌
+															</span>
+														</div>
+
+														<div
+															class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-slate-500">
+															<span class="inline-flex items-center gap-1">
+																<i class="ri-briefcase-2-line text-slate-400"></i>
+																<span
+																	class="truncate max-w-[14rem]">{{ p.company || '-' }}</span>
+															</span>
+															<span class="inline-flex items-center gap-1">
+																<i class="ri-user-3-line text-slate-400"></i>
+																<span>{{ p.gender || '-' }}</span>
+															</span>
+														</div>
+													</div>
+
+													<div class="flex shrink-0 gap-2">
+														<button
+															class="h-9 w-9 rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:bg-slate-50 active:scale-[0.96] [-webkit-tap-highlight-color:transparent]"
+															@click="openEditProfile(p)" aria-label="编辑">
+															<i class="ri-edit-2-line text-[16px]"></i>
+														</button>
+														<button
+															class="h-9 w-9 rounded-full border border-rose-200 bg-rose-50 text-rose-700 shadow-sm transition hover:bg-rose-100/60 active:scale-[0.96] [-webkit-tap-highlight-color:transparent]"
+															@click="removeProfile(p)" aria-label="删除">
+															<i class="ri-delete-bin-6-line text-[16px]"></i>
+														</button>
+													</div>
+												</div>
+
+												<div class="mt-3 h-px w-full bg-slate-100"></div>
+
+												<ul
+													class="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 list-none p-0 m-0 text-[12px]">
+													<li class="flex items-start gap-2 rounded-xl bg-slate-50 px-3 py-2">
+														<i class="ri-briefcase-2-line mt-[1px] text-slate-400"></i>
+														<div class="min-w-0">
+															<div class="text-[11px] text-slate-500">职位</div>
+															<div class="truncate text-slate-900 font-medium">
+																{{ p.title || '-' }}
+															</div>
+														</div>
+													</li>
+
+													<li v-if="p.mobile"
+														class="flex items-start gap-2 rounded-xl bg-slate-50 px-3 py-2">
+														<i class="ri-smartphone-line mt-[1px] text-slate-400"></i>
+														<div class="min-w-0">
+															<div class="text-[11px] text-slate-500">手机</div>
+															<div class="truncate text-slate-900 font-medium">
+																{{ p.mobile }}
+															</div>
+														</div>
+													</li>
+
+													<template v-if="p.needHotel">
+														<li
+															class="col-span-2 flex items-start gap-2 rounded-xl bg-slate-50 px-3 py-2">
+															<i class="ri-hotel-bed-line mt-[1px] text-slate-400"></i>
+															<div class="min-w-0">
+																<div class="text-[11px] text-slate-500">住宿</div>
+																<div class="text-slate-900 font-medium">
+																	需要住宿<span v-if="p.hotelDate && p.hotelDate.length"
+																		class="text-slate-500 font-normal"> ·
+																		{{ humanizeNights(p.hotelDate) }}</span>
+																</div>
+															</div>
+														</li>
+													</template>
+
+													<li v-if="p.carNo"
+														class="col-span-2 flex items-start gap-2 rounded-xl bg-slate-50 px-3 py-2">
+														<i class="ri-car-line mt-[1px] text-slate-400"></i>
+														<div class="min-w-0">
+															<div class="text-[11px] text-slate-500">车牌</div>
+															<div class="truncate text-slate-900 font-medium">
+																{{ p.carNo }}
+															</div>
+														</div>
+													</li>
+												</ul>
+											</div>
+
+										</div>
+
+
+
+									</div>
+
+									<div class="absolute bottom-0 w-full px-4 pt-2.5 pb-4">
+										<button
+											class="w-full h-11 rounded-full flex items-center justify-center bg-slate-950 text-white border border-slate-900/10 text-[15px] font-semibold tracking-wide cursor-pointer shadow-[0_16px_40px_rgba(2,6,23,0.22)] transition enabled:hover:bg-slate-900 enabled:hover:shadow-[0_18px_46px_rgba(2,6,23,0.26)] enabled:active:bg-slate-950 enabled:active:shadow-[0_12px_30px_rgba(2,6,23,0.20)] enabled:active:scale-[0.985]"
+											:class="[submitLock ? 'bg-slate-300 cursor-not-allowed opacity-70 hover:bg-slate-300 hover:shadow-none active:scale-100 active:shadow-none' : '']"
+											:disabled="submitLock" @click="submitSignup2">
+											{{ submitLock ? "提交中..." : "提交" }}
+										</button>
+									</div>
+								</div>
+							</template>
+
+
+							<!-- ========================= PROFILE EDIT (SH/JN) ========================= -->
+							<template v-else-if="currentPage==='ProfileEdit'">
+								<div id="page-Profile-Edit" class="w-full h-full bg-slate-50">
+
+									<div
+										class="mx-auto h-full bg-white border border-slate-200/70 relative overflow-hidden">
+										<button
+											class="absolute left-3 top-3 w-11 h-11 rounded-full flex items-center justify-center border border-slate-200/70 bg-white/70 text-slate-700 shadow-[0_10px_26px_rgba(2,6,23,0.08)] transition hover:bg-white active:scale-[0.94] [-webkit-tap-highlight-color:transparent]"
+											@click="go('signup')" aria-label="关闭">
+											<i class="ri-close-line text-[22px]"></i>
+										</button>
+
+										<div class="px-4 pt-20">
+											<div
+												class="flex items-center gap-2 h-10 w-full pl-3 pr-3 text-[12px] text-slate-600 bg-slate-50/80 border border-slate-200/70 rounded-2xl shadow-[0_8px_22px_rgba(2,6,23,0.04)]">
+												<i class="ri-information-line text-slate-500"></i><span
+													class="tracking-wide">请按真实情况填写以下内容</span>
+											</div>
+										</div>
+
+										<form class="h-[calc(100%-12.5rem)] overflow-y-scroll px-4 mt-3 pb-2"
+											@submit.prevent="saveProfile">
+											<div class="py-2.5 pb-3">
+												<label
+													class="block text-[13px] text-slate-800 mb-1.5 font-medium tracking-wide"><span
+														class="text-rose-500 mr-1">*</span>姓名</label>
+												<input
+													class="w-full box-border text-[14px] px-4 py-3 rounded-2xl bg-white border border-slate-200/70 shadow-[0_8px_22px_rgba(2,6,23,0.05)] outline-none placeholder:text-slate-400 transition focus:border-slate-300 focus:shadow-[0_0_0_4px_rgba(15,23,42,0.10)] disabled:bg-slate-50 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed"
+													type="text" :disabled="isDisabled" v-model.trim="editing.name"
+													placeholder="请输入姓名（必填）" required />
+											</div>
+
+											<div class="py-2.5 pb-3">
+												<label
+													class="block text-[13px] text-slate-800 mb-1.5 font-medium tracking-wide"><span
+														class="text-rose-500 mr-1">*</span>性别</label>
+												<div class="flex gap-5">
+													<label
+														class="text-[14px] text-slate-800 flex items-center rounded-full px-3 py-2 bg-slate-50/70 border border-slate-200/60 shadow-[0_6px_16px_rgba(2,6,23,0.04)]">
+														<input class="mr-2 accent-slate-950" :disabled="isDisabled"
+															type="radio" value="男" v-model="editing.gender" /> 男
+													</label>
+													<label
+														class="text-[14px] text-slate-800 flex items-center rounded-full px-3 py-2 bg-slate-50/70 border border-slate-200/60 shadow-[0_6px_16px_rgba(2,6,23,0.04)]">
+														<input class="mr-2 accent-slate-950" :disabled="isDisabled"
+															type="radio" value="女" v-model="editing.gender" /> 女
+													</label>
+												</div>
+											</div>
+
+											<div class="py-2.5 pb-3">
+												<label
+													class="block text-[13px] text-slate-800 mb-1.5 font-medium tracking-wide">手机</label>
+												<input :disabled="isDisabled"
+													class="w-full box-border text-[14px] px-4 py-3 rounded-2xl bg-white border border-slate-200/70 shadow-[0_8px_22px_rgba(2,6,23,0.05)] outline-none placeholder:text-slate-400 transition focus:border-slate-300 focus:shadow-[0_0_0_4px_rgba(15,23,42,0.10)] disabled:bg-slate-50 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed"
+													type="tel" v-model.trim="editing.mobile" inputmode="numeric"
+													placeholder="" />
+											</div>
+
+											<div class="py-2.5 pb-3">
+												<label
+													class="block text-[13px] text-slate-800 mb-1.5 font-medium tracking-wide"><span
+														class="text-rose-500 mr-1">*</span>公司名称</label>
+												<input :disabled="isDisabled"
+													class="w-full box-border text-[14px] px-4 py-3 rounded-2xl bg-white border border-slate-200/70 shadow-[0_8px_22px_rgba(2,6,23,0.05)] outline-none placeholder:text-slate-400 transition focus:border-slate-300 focus:shadow-[0_0_0_4px_rgba(15,23,42,0.10)] disabled:bg-slate-50 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed"
+													type="text" v-model.trim="editing.company" required
+													placeholder="请输入公司名称（必填）" />
+											</div>
+
+											<div class="py-2.5 pb-3">
+												<label
+													class="block text-[13px] text-slate-800 mb-1.5 font-medium tracking-wide"><span
+														class="text-rose-500 mr-1">*</span>职位</label>
+												<input :disabled="isDisabled"
+													class="w-full box-border text-[14px] px-4 py-3 rounded-2xl bg-white border border-slate-200/70 shadow-[0_8px_22px_rgba(2,6,23,0.05)] outline-none placeholder:text-slate-400 transition focus:border-slate-300 focus:shadow-[0_0_0_4px_rgba(15,23,42,0.10)] disabled:bg-slate-50 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed"
+													type="text" v-model.trim="editing.title" required
+													placeholder="请输入职位（必填）" />
+											</div>
+
+											<div class="py-2.5 pb-3">
+												<label
+													class="block text-[13px] text-slate-800 mb-1.5 font-medium tracking-wide"><span
+														class="text-rose-500 mr-1">*</span>是否需要安排住宿</label>
+												<div class="flex gap-5">
+													<label
+														class="text-[14px] text-slate-800 flex items-center rounded-full px-3 py-2 bg-slate-50/70 border border-slate-200/60 shadow-[0_6px_16px_rgba(2,6,23,0.04)]">
+														<input class="mr-2 accent-slate-950" :disabled="isDisabled"
+															type="radio" value="yes" v-model="editing.needHotel"
+															@change="autoSelectDate(currentMeetingIdByPage())" />
+														需要
+													</label>
+													<label
+														class="text-[14px] text-slate-800 flex items-center rounded-full px-3 py-2 bg-slate-50/70 border border-slate-200/60 shadow-[0_6px_16px_rgba(2,6,23,0.04)]">
+														<input class="mr-2 accent-slate-950" :disabled="isDisabled"
+															type="radio" value="no" v-model="editing.needHotel"
+															@change="autoSelectDate(currentMeetingIdByPage())" />
+														不需要
+													</label>
+												</div>
+											</div>
+
+											<div class="py-2.5 pb-3" v-if="editing.needHotel==='yes'">
+												<label
+													class="block text-[13px] text-slate-800 mb-1.5 font-medium tracking-wide"><span
+														class="text-rose-500 mr-1">*</span>住宿安排</label>
+												<input
+													class="w-full box-border text-[14px] px-4 py-3 rounded-2xl bg-slate-50 border border-slate-200/70 shadow-[0_8px_22px_rgba(2,6,23,0.04)] outline-none placeholder:text-slate-400"
+													type="text" v-model="editing.hotelPlan" readonly value="示例主办方预定房间"
+													placeholder="示例主办方预定房间" />
+											</div>
+
+											<div class="py-2.5 pb-3" v-if="editing.needHotel==='yes'">
+												<label
+													class="block text-[13px] text-slate-800 mb-1.5 font-medium tracking-wide"><span
+														class="text-rose-500 mr-1">*</span>住宿日期</label>
+												<div class="flex flex-col gap-2">
+													<label v-for="night in hotelDateOptions" :key="night"
+														class="text-[14px] text-slate-800 flex items-center rounded-2xl px-3 py-2 bg-slate-50/70 border border-slate-200/60 shadow-[0_6px_16px_rgba(2,6,23,0.04)]">
+														<input class="mr-2 accent-slate-950" :disabled="isDisabled"
+															type="checkbox" :value="night"
+															v-model="editing.hotelDate" />
+														{{ night }}
+													</label>
+													<label v-if="hotelDateOptions.length === 0"
+														class="text-[13px] text-slate-500 rounded-2xl px-3 py-2 bg-slate-50/70 border border-dashed border-slate-200/60">
+														当前场次暂无可选住宿日期
+													</label>
+												</div>
+											</div>
+
+											<div class="py-2.5 pb-3">
+												<label
+													class="block text-[13px] text-slate-800 mb-1.5 font-medium tracking-wide">自驾车牌</label>
+												<input :disabled="isDisabled"
+													class="w-full box-border text-[14px] px-4 py-3 rounded-2xl bg-white border border-slate-200/70 shadow-[0_8px_22px_rgba(2,6,23,0.05)] outline-none placeholder:text-slate-400 transition focus:border-slate-300 focus:shadow-[0_0_0_4px_rgba(15,23,42,0.10)] disabled:bg-slate-50 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed"
+													type="text" v-model.trim="editing.carNo" placeholder="如有请填写" />
+											</div>
+										</form>
+
+										<div class="px-4 pb-4 pt-2">
+											<div class="w-full flex justify-between gap-2.5">
+												<button type="button"
+													class="flex-1 h-11 rounded-2xl border border-rose-200/60 bg-rose-50 text-[14px] font-semibold text-rose-700 shadow-[0_10px_26px_rgba(2,6,23,0.06)] transition hover:bg-rose-50/80 active:scale-[0.985]"
+													@click="removeProfile(editing)"
+													v-if="editing && (editing.name || editing.mobile || editing.company || editing.title)">
+													删除
+												</button>
+												<button type="button"
+													class="flex-1 h-11 rounded-2xl border border-slate-900/10 bg-slate-950 text-[14px] font-semibold text-white shadow-[0_16px_40px_rgba(2,6,23,0.22)] transition hover:bg-slate-900 active:bg-slate-950 active:scale-[0.985]"
+													@click="saveProfile">
+													保存
+												</button>
+											</div>
+										</div>
+									</div>
+
+								</div>
+							</template>
+
+							<!-- ========================= STATUS ========================= -->
+							<template v-else-if="currentPage==='status'">
+								<div
+									class="absolute w-full h-[300px] text-center text-white bg-transparent overflow-hidden">
+									<img src="img/bg.png" alt="" class="w-full h-full object-cover" />
+									<div
+										class="pointer-events-none absolute inset-0 bg-gradient-to-b from-slate-950/60 via-slate-950/35 to-white/0">
+									</div>
+								</div>
+
+								<div id="page-status" class="relative w-full h-full">
+									<div class="relative flex w-full h-20 items-center">
+										<div class="ml-[15px] flex h-[50px] w-[50px] items-center justify-center rounded-full border border-white/15 bg-white/10 text-[28px] text-white backdrop-blur-xl shadow-[0_10px_26px_rgba(0,0,0,0.18)] transition hover:bg-white/14 active:scale-[0.96] z-[9999]"
+											@click="go('home')">
+											<i class="ri-arrow-left-s-line pr-[2px]"></i>
+										</div>
+										<div
+											class="pointer-events-none absolute left-1/2 -translate-x-1/2 text-[18px] font-semibold tracking-wide text-white drop-shadow-[0_10px_26px_rgba(0,0,0,0.35)]">
+											报名
+										</div>
+									</div>
+
+									<div
+										class="absolute left-1/2 top-[118px] flex h-[48px] w-[140px] -translate-x-1/2 items-center justify-center rounded-2xl border border-white/12 bg-white/8 backdrop-blur-xl shadow-[0_14px_34px_rgba(0,0,0,0.16)]">
+										<img src="img/logo.svg" alt="Demo Logo"
+											class="h-[26px] drop-shadow-[0_12px_26px_rgba(0,0,0,0.28)]" />
+									</div>
+
+									<div class="mt-[300px] flex flex-col items-center gap-4 px-6">
+										<div
+											class="w-[78px] h-[78px] rounded-full bg-emerald-500/90 text-white flex items-center justify-center text-[36px] shadow-[0_18px_40px_rgba(16,185,129,0.25)] ring-1 ring-white/40">
+											<i class="ri-check-line"></i>
+										</div>
+										<h2 class="text-[18px] text-slate-900 font-semibold tracking-wide">
+											您已登记成功
+										</h2>
+										<div class="text-[12px] text-slate-500 tracking-wide">
+											可返回首页查看会议信息与后续操作
+										</div>
+									</div>
+
+									<div class="absolute bottom-0 w-full px-4 pt-2.5 pb-4">
+										<button
+											class="w-full h-11 rounded-full flex items-center justify-center bg-slate-950 text-white border border-slate-900/10 text-[15px] font-semibold tracking-wide cursor-pointer shadow-[0_16px_40px_rgba(2,6,23,0.22)] transition hover:bg-slate-900 hover:shadow-[0_18px_46px_rgba(2,6,23,0.26)] active:bg-slate-950 active:shadow-[0_12px_30px_rgba(2,6,23,0.20)] active:scale-[0.985]"
+											@click="go('home', { replace: true })">
+											返回
+										</button>
+									</div>
+								</div>
+							</template>
+
+
+							<!-- ========================= ACCESS PRE 1 ========================= -->
+							<template v-else-if="currentPage==='AccessPre1'">
+								<div
+									class="absolute w-full h-[300px] text-center text-white bg-transparent overflow-hidden">
+									<img src="img/bg.png" alt="" class="w-full h-full object-cover" />
+									<div
+										class="pointer-events-none absolute inset-0 bg-gradient-to-b from-slate-950/60 via-slate-950/35 to-white/0">
+									</div>
+								</div>
+
+								<div id="page-Access" class="relative w-full h-full">
+									<div class="relative flex w-full h-20 items-center">
+										<div class="ml-[15px] flex h-[50px] w-[50px] items-center justify-center rounded-full border border-white/15 bg-white/10 text-[28px] text-white backdrop-blur-xl shadow-[0_10px_26px_rgba(0,0,0,0.18)] transition hover:bg-white/14 active:scale-[0.96] z-[9999]"
+											@click="go('home')">
+											<i class="ri-arrow-left-s-line pr-[2px]"></i>
+										</div>
+										<div
+											class="pointer-events-none absolute left-1/2 -translate-x-1/2 text-[18px] font-semibold tracking-wide text-white drop-shadow-[0_10px_26px_rgba(0,0,0,0.35)]">
+											入场码
+										</div>
+									</div>
+
+									<div
+										class="absolute left-1/2 top-[118px] flex h-[48px] w-[140px] -translate-x-1/2 items-center justify-center rounded-2xl border border-white/12 bg-white/8 backdrop-blur-xl shadow-[0_14px_34px_rgba(0,0,0,0.16)]">
+										<img src="img/logo.svg" alt="Demo Logo"
+											class="h-[26px] drop-shadow-[0_12px_26px_rgba(0,0,0,0.28)]" />
+									</div>
+
+									<div class="mt-[300px] flex flex-col items-center gap-4 px-6">
+										<div
+											class="w-[78px] h-[78px] rounded-full bg-red-500/90 text-white flex items-center justify-center text-[36px] shadow-[0_18px_40px_rgba(237,65,59,0.25)] ring-1 ring-white/40">
+											<i class="ri-error-warning-line"></i>
+										</div>
+										<h2 class="text-[18px] text-slate-900 font-semibold tracking-wide">
+											您还未登记
+										</h2>
+										<div class="text-[12px] text-slate-500 tracking-wide">
+											可返回首页查看会议信息与后续操作
+										</div>
+									</div>
+
+									<div class="absolute bottom-0 w-full px-4 pt-2.5 pb-4">
+										<button
+											class="w-full h-11 rounded-full flex items-center justify-center bg-slate-950 text-white border border-slate-900/10 text-[15px] font-semibold tracking-wide cursor-pointer shadow-[0_16px_40px_rgba(2,6,23,0.22)] transition hover:bg-slate-900 hover:shadow-[0_18px_46px_rgba(2,6,23,0.26)] active:bg-slate-950 active:shadow-[0_12px_30px_rgba(2,6,23,0.20)] active:scale-[0.985]"
+											@click="goSignupFromAccess">
+											进入登记
+										</button>
+									</div>
+								</div>
+							</template>
+
+							<!-- ========================= ACCESS PRE 2 ========================= -->
+							<template v-else-if="currentPage==='AccessPre2'">
+								<div
+									class="absolute w-full h-[300px] text-center text-white bg-transparent overflow-hidden">
+									<img src="img/bg.png" alt="" class="w-full h-full object-cover" />
+									<div
+										class="pointer-events-none absolute inset-0 bg-gradient-to-b from-slate-950/60 via-slate-950/35 to-white/0">
+									</div>
+								</div>
+
+								<div id="page-Access" class="relative w-full h-full">
+									<div class="relative flex w-full h-20 items-center">
+										<div class="ml-[15px] flex h-[50px] w-[50px] items-center justify-center rounded-full border border-white/15 bg-white/10 text-[28px] text-white backdrop-blur-xl shadow-[0_10px_26px_rgba(0,0,0,0.18)] transition hover:bg-white/14 active:scale-[0.96] z-[9999]"
+											@click="go('home')">
+											<i class="ri-arrow-left-s-line pr-[2px]"></i>
+										</div>
+										<div
+											class="pointer-events-none absolute left-1/2 -translate-x-1/2 text-[18px] font-semibold tracking-wide text-white drop-shadow-[0_10px_26px_rgba(0,0,0,0.35)]">
+											入场码
+										</div>
+									</div>
+
+									<div class="mt-[300px] flex flex-col items-center gap-4 px-6">
+										<div
+											class="w-[78px] h-[78px] rounded-full bg-emerald-500/90 text-white flex items-center justify-center text-[36px] shadow-[0_18px_40px_rgba(16,185,129,0.25)] ring-1 ring-white/40">
+											<i class="ri-check-line"></i>
+										</div>
+										<h2 class="text-[18px] text-slate-900 font-semibold tracking-wide">
+											您已登记成功
+										</h2>
+										<div class="text-[12px] text-slate-500 tracking-wide">
+											请等待工作人员审核
+										</div>
+									</div>
+
+									<div class="absolute bottom-0 w-full px-4 pt-2.5 pb-4">
+										<button
+											class="w-full h-11 rounded-full flex items-center justify-center bg-slate-950 text-white border border-slate-900/10 text-[15px] font-semibold tracking-wide cursor-pointer shadow-[0_16px_40px_rgba(2,6,23,0.22)] transition hover:bg-slate-900 hover:shadow-[0_18px_46px_rgba(2,6,23,0.26)] active:bg-slate-950 active:shadow-[0_12px_30px_rgba(2,6,23,0.20)] active:scale-[0.985]"
+											@click="go('home', { replace: true })">
+											返回
+										</button>
+									</div>
+								</div>
+							</template>
+
+							<!-- ========================= ACCESS OK ========================= -->
+							<template v-else-if="currentPage==='Access'">
+								<div
+									class="absolute w-full h-[300px] text-center text-white bg-transparent overflow-hidden">
+									<img src="img/bg.png" alt="" class="w-full h-full object-cover scale-[1.04]" />
+									<div
+										class="pointer-events-none absolute inset-0 bg-gradient-to-b from-slate-950/60 via-slate-950/35 to-white/0">
+									</div>
+								</div>
+
+								<div id="page-Access" class="relative w-full h-full">
+									<div class="relative flex w-full h-20 items-center">
+										<div class="ml-[15px] flex h-[50px] w-[50px] items-center justify-center rounded-full border border-white/15 bg-white/10 text-[28px] text-white backdrop-blur-xl shadow-[0_10px_26px_rgba(0,0,0,0.18)] transition hover:bg-white/14 active:scale-[0.96] z-[9999]"
+											@click="go('home')">
+											<i class="ri-arrow-left-s-line pr-[2px]"></i>
+										</div>
+										<div
+											class="pointer-events-none absolute left-1/2 -translate-x-1/2 text-[18px] font-semibold tracking-wide text-white drop-shadow-[0_10px_26px_rgba(0,0,0,0.35)]">
+											入场码
+										</div>
+									</div>
+
+									<div
+										class="absolute left-1/2 top-[92px] flex h-[48px] w-[140px] -translate-x-1/2 items-center justify-center rounded-2xl border border-white/12 bg-white/8 backdrop-blur-xl shadow-[0_14px_34px_rgba(0,0,0,0.16)]">
+										<img src="img/logo.svg" alt="Demo Logo"
+											class="h-[26px] drop-shadow-[0_12px_26px_rgba(0,0,0,0.28)]" />
+									</div>
+
+									<div
+										class="absolute top-1/2 -translate-y-1/2 h-[460px] w-[calc(100%-4rem)] bg-white text-slate-900 rounded-3xl p-5 shadow-[0_18px_55px_rgba(2,6,23,0.12)] mt-4 mx-[2rem] border border-slate-200/70">
+										<div class="w-full h-20 flex items-center justify-center">
+											<div
+												class="w-[78px] h-[78px] rounded-full bg-emerald-500/90 text-white flex items-center justify-center text-[36px] font-bold shadow-[0_18px_40px_rgba(16,185,129,0.25)] ring-1 ring-white/40">
+												<i class="ri-check-line"></i>
+											</div>
+										</div>
+
+										<div class="w-full flex flex-col items-center mt-4">
+											<span class="block text-[18px] font-semibold">欢迎参会</span>
+											<span
+												class="mt-1 block text-[13px] text-slate-600 font-medium">以下是您的专属入场码</span>
+										</div>
+
+										<div class="w-full h-px bg-slate-200/70 my-5"></div>
+
+										<div class="w-full flex items-center flex-col mt-2.5">
+											<div class="w-full flex justify-center items-center mb-2">
+												<div
+													class="w-[200px] h-[200px] max-w-[220px] max-h-[220px] border border-slate-200/70 rounded-2xl flex items-center justify-center overflow-hidden bg-white shadow-[0_12px_30px_rgba(2,6,23,0.08)] p-4">
+													<div class="w-full h-full" id="qrcode-box">
+														<img v-if="qrUrl" :src="qrUrl" alt="入场二维码"
+															class="w-full h-full object-contain" />
+														<div v-else
+															class="w-[calc(100%-12px)] h-[calc(100%-12px)] border border-dashed border-slate-300 rounded-xl bg-slate-50">
+														</div>
+													</div>
+												</div>
+											</div>
+
+											<p class="my-2 mb-3 text-center text-slate-700 text-[13px] tracking-wide">
+												请在入场时出示二维码
+											</p>
+										</div>
+									</div>
+
+									<div class="absolute bottom-0 w-full px-4 pt-2.5 pb-4">
+										<button
+											class="w-full h-11 rounded-full flex items-center justify-center bg-slate-950 text-white border border-slate-900/10 text-[15px] font-semibold tracking-wide cursor-pointer shadow-[0_16px_40px_rgba(2,6,23,0.22)] transition hover:bg-slate-900 hover:shadow-[0_18px_46px_rgba(2,6,23,0.26)] active:bg-slate-950 active:shadow-[0_12px_30px_rgba(2,6,23,0.20)] active:scale-[0.985]"
+											@click="go('home', { replace: true })">
+											返回
+										</button>
+									</div>
+								</div>
+							</template>
+
+							<!-- ========================= ACCESS ERROR ========================= -->
+							<template v-else-if="currentPage==='AccessError'">
+								<div
+									class="absolute w-full h-[300px] text-center text-white bg-transparent overflow-hidden">
+									<img src="img/bg.png" alt="" class="w-full h-full object-cover" />
+									<div
+										class="pointer-events-none absolute inset-0 bg-gradient-to-b from-slate-950/60 via-slate-950/35 to-white/0">
+									</div>
+								</div>
+
+								<div id="page-Access" class="relative w-full h-full">
+									<div class="relative flex w-full h-20 items-center">
+										<div class="ml-[15px] flex h-[50px] w-[50px] items-center justify-center rounded-full border border-white/15 bg-white/10 text-[28px] text-white backdrop-blur-xl shadow-[0_10px_26px_rgba(0,0,0,0.18)] transition hover:bg-white/14 active:scale-[0.96] z-[9999]"
+											@click="go('home')">
+											<i class="ri-arrow-left-s-line pr-[2px]"></i>
+										</div>
+										<div
+											class="pointer-events-none absolute left-1/2 -translate-x-1/2 text-[18px] font-semibold tracking-wide text-white drop-shadow-[0_10px_26px_rgba(0,0,0,0.35)]">
+											入场码
+										</div>
+									</div>
+
+									<div
+										class="absolute left-1/2 top-[118px] flex h-[48px] w-[140px] -translate-x-1/2 items-center justify-center rounded-2xl border border-white/12 bg-white/8 backdrop-blur-xl shadow-[0_14px_34px_rgba(0,0,0,0.16)]">
+										<img src="img/logo.svg" alt="Demo Logo"
+											class="h-[26px] drop-shadow-[0_12px_26px_rgba(0,0,0,0.28)]" />
+									</div>
+
+									<div class="mt-[300px] flex flex-col items-center gap-4 px-6">
+										<div
+											class="w-[78px] h-[78px] rounded-full bg-red-500/90 text-white flex items-center justify-center text-[36px] shadow-[0_18px_40px_rgba(237,65,59,0.25)] ring-1 ring-white/40">
+											<i class="ri-error-warning-line"></i>
+										</div>
+										<h2 class="text-[18px] text-slate-900 font-semibold tracking-wide">
+											很抱歉 暂时无法入场
+										</h2>
+										<div class="text-[12px] text-slate-500 tracking-wide text-center">
+											您的入场申请尚未通过，请联系工作人员确认<br />如因网络异常，请稍后刷新页面重试。
+										</div>
+									</div>
+
+									<div class="absolute bottom-0 w-full px-4 pt-2.5 pb-4">
+										<button
+											class="w-full h-11 rounded-full flex items-center justify-center bg-slate-950 text-white border border-slate-900/10 text-[15px] font-semibold tracking-wide cursor-pointer shadow-[0_16px_40px_rgba(2,6,23,0.22)] transition hover:bg-slate-900 hover:shadow-[0_18px_46px_rgba(2,6,23,0.26)] active:bg-slate-950 active:shadow-[0_12px_30px_rgba(2,6,23,0.20)] active:scale-[0.985]"
+											@click="go('home', { replace: true })">
+											返回
+										</button>
+									</div>
+
+
+
+								</div>
+							</template>
+
+							<!-- ========================= AGENDA ========================= -->
+							<template v-else-if="currentPage==='agenda'">
+								<div id="page-agenda" class="relative w-full h-full bg-slate-950">
+									<div class="relative flex w-full h-20 items-center">
+										<div class="ml-[15px] flex h-[50px] w-[50px] items-center justify-center rounded-full border border-white/15 bg-white/10 text-[28px] text-white backdrop-blur-xl shadow-[0_10px_26px_rgba(0,0,0,0.18)] transition hover:bg-white/14 active:scale-[0.96] z-[9999]"
+											@click="go('home')">
+											<i class="ri-arrow-left-s-line pr-[2px]"></i>
+										</div>
+										<div
+											class="pointer-events-none absolute left-1/2 -translate-x-1/2 text-[18px] font-semibold tracking-wide text-white drop-shadow-[0_10px_26px_rgba(0,0,0,0.35)]">
+											会议日程
+										</div>
+									</div>
+
+									<div
+										class="absolute inset-0 top-0 w-full h-full overflow-y-scroll overscroll-contain">
+										<img src="" alt="" class="w-full h-auto" />
+									</div>
+								</div>
+							</template>
+
+
+							<!-- ========================= HOTEL ========================= -->
+							<template v-else-if="currentPage==='hotel'">
+								<div id="page-hotel" class="relative w-full h-full bg-slate-950">
+									<div class="relative flex w-full h-20 items-center">
+										<div class="ml-[15px] flex h-[50px] w-[50px] items-center justify-center rounded-full border border-white/15 bg-white/10 text-[28px] text-white backdrop-blur-xl shadow-[0_10px_26px_rgba(0,0,0,0.18)] transition hover:bg-white/14 active:scale-[0.96] z-[9999]"
+											@click="go('home')">
+											<i class="ri-arrow-left-s-line pr-[2px]"></i>
+										</div>
+										<div
+											class="pointer-events-none absolute left-1/2 -translate-x-1/2 text-[18px] font-semibold tracking-wide text-white drop-shadow-[0_10px_26px_rgba(0,0,0,0.35)]">
+											交通路线
+										</div>
+									</div>
+
+									<div
+										class="absolute inset-0 top-0 w-full h-full overflow-y-scroll overscroll-contain">
+										<img src="" alt="" class="w-full h-auto" />
+									</div>
+								</div>
+							</template>
+
+							<!-- ========================= FALLBACK ========================= -->
+							<template v-else>
+								<div class="p-6">
+									<div class="text-lg font-bold mb-2">页面不存在</div>
+									<button class="px-4 py-2 rounded-xl bg-[#2563eb] text-white"
+										@click="go('home')">返回首页</button>
+								</div>
+							</template>
+
+						</div>
+					</transition>
+				</div>
+
+				<!-- ========================= SESSION PICKER ========================= -->
+				<div v-if="ShowSessionPicker"
+					class="fixed inset-0 z-[999] flex items-center justify-center bg-black/35 transition-opacity [-webkit-tap-highlight-color:transparent]"
+					@click.self="closeSessionPicker">
+					<div
+						class="w-[calc(100%-64px)] max-w-[360px] rounded-3xl bg-white shadow-[0_24px_70px_rgba(0,0,0,0.28)] overflow-hidden animate-[fadeUp_0.25s_ease-out]">
+						<div
+							class="h-[62px] flex items-center justify-center text-[16px] font-semibold tracking-wide text-slate-900 border-b border-slate-200/70 bg-white">
+							请选择会议场次
+						</div>
+
+						<div class="px-4 py-4 space-y-3 bg-white">
+							<button v-for="session in sessionList" :key="session.id"
+								class="group w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left shadow-[0_10px_24px_rgba(2,6,23,0.06)] transition hover:border-slate-300 hover:shadow-[0_14px_34px_rgba(2,6,23,0.10)] active:scale-[0.985]"
+								@click="setSession(session.id)">
+
+								<div class="flex items-center justify-between gap-3">
+									<div class="flex items-start gap-3">
+										<div
+											class="mt-0.5 h-8 w-8 rounded-xl bg-slate-900/5 border border-slate-200 flex items-center justify-center">
+											<i class="ri-map-pin-2-line text-[16px] text-slate-700"></i>
+										</div>
+										<div>
+											<div class="text-[14px] font-semibold text-slate-900 leading-snug">
+												{{ session.city }}
+											</div>
+											<div class="mt-0.5 text-[12px] text-slate-500 tracking-wide">
+												{{ session.dateDisplay }}
+											</div>
+										</div>
+									</div>
+									<i
+										class="ri-arrow-right-s-line text-[18px] text-slate-400 transition group-hover:text-slate-600"></i>
+								</div>
+							</button>
+						</div>
+
+						<div class="px-4 pb-5 bg-white">
+							<button class="w-full h-[48px] rounded-2xl bg-slate-100 text-slate-800 text-[14px] font-semibold tracking-wide transition
+								       hover:bg-slate-200 active:bg-slate-300 active:scale-[0.985]" @click="closeSessionPicker">
+								取消
+							</button>
+						</div>
+					</div>
+				</div>
+
+
+
+
+
+			</div>
+		</div>
+
+		<script>
+			const App = {
+				setup() {
+					const {
+						ref,
+						reactive,
+						computed,
+						watch,
+						onMounted,
+						onBeforeUnmount,
+						nextTick,
+					} = Vue;
+
+					// =========================
+					// state
+					// =========================
+					const conferenceInfo = ref(CONFERENCE_INFO);
+
+					// 会议选择
+					const meetings = ref(Array.isArray(CONFERENCE_INFO.meetings) ? CONFERENCE_INFO.meetings : []);
+					const selectedMeetingId = ref(null);
+					const ShowSessionPicker = ref(false);
+
+					// 页面
+					const pagesOrder = ref([
+						"home", "invite", "signupAuth", "signup", "ProfileEdit",
+						"status", "agenda", "login", "AccessPre1", "AccessPre2", "Access", "hotel", "AccessError",
+					]);
+
+					const currentPage = ref("home");
+					const lastPage = ref("home");
+					const transitionName = ref("slide-left");
+
+					const _navSeq = ref(0);
+					const _suppressStateChange = ref(false);
+					const _exitArmed = ref(false);
+					const _exitTimer = ref(null);
+
+					// 验证码/登录
+					const form = reactive({
+						mobile: "",
+						code: ""
+					});
+					const loginType = ref("phone");
+					const loginForm = reactive({
+						mobile: "",
+						code: ""
+					});
+					const signupType = ref("phone");
+
+					const codeCountdown = ref(0);
+					const codeTimer = ref(null);
+					const loginLock = ref(false);
+					const submitLock = ref(false);
+					const isDisabled = ref(false);
+
+					// 出席人员
+					const attendees = ref([]);
+					const editing = reactive({
+						name: "",
+						gender: "男",
+						mobile: "",
+						company: "",
+						title: "",
+						needHotel: "no",
+						hotelPlan: "示例主办方预定房间",
+						hotelDate: [],
+						carNo: "",
+					});
+					const _editingOriginFP = ref("");
+
+					const qrUrl = ref("");
+
+					const _gettingCode = ref(false);
+					const _codeTimer = ref(null);
+
+					// =========================
+					// computed
+					// =========================
+					const STORAGE_MEETING_ID_KEY = "exh_meeting_id";
+
+					const sessionList = computed(() => meetings.value || []);
+
+					const selectedSession = computed(() => {
+						const id = selectedMeetingId.value;
+						return (meetings.value || []).find((m) => m && m.id === id) || null;
+					});
+
+					const currentMeetingIdByPage = () => selectedMeetingId.value || localStorage.getItem(
+						STORAGE_MEETING_ID_KEY) || "";
+
+					const hotelDateOptions = computed(() => {
+						const id = currentMeetingIdByPage();
+						const m = (meetings.value || []).find((x) => x && x.id === id);
+						return m?.hotelDates || [];
+					});
+
+
+					// =========================
+					// hash / 页面切换
+					// =========================
+					const pageIndex = (p) => pagesOrder.value.indexOf(p);
+
+					const setTransitionByDirection = (from, to) => {
+						const fi = pageIndex(from);
+						const ti = pageIndex(to);
+						transitionName.value = ti > fi ? "slide-left" : "slide-right";
+					};
+
+					const _getHashPage = () => {
+						// 支持 #home / #/home 两种写法
+						const raw = (location.hash || "").replace(/^#\/?/, "");
+						return raw || "home";
+					};
+
+					const _setHashPage = (page, replace = false) => {
+						const url = location.pathname + location.search + "#" + page;
+						if (replace) location.replace(url);
+						else location.hash = page;
+					};
+
+					const applyPage = (page = "home") => {
+						if (!pagesOrder.value.includes(page)) page = "home";
+						setTransitionByDirection(currentPage.value, page);
+
+						setTimeout(() => {
+							lastPage.value = currentPage.value;
+							currentPage.value = page;
+							try {
+								window.scrollTo(0, 0);
+							} catch {}
+						}, 80);
+					};
+
+					const _syncFromHash = () => {
+						const page = _getHashPage();
+						applyPage(page);
+					};
+
+					const _onHashChange = () => {
+						_syncFromHash();
+					};
+
+					const go = (page, {
+						replace = false
+					} = {}) => {
+						if (!pagesOrder.value.includes(page)) return;
+						if (page === currentPage.value) return applyPage(page);
+						_setHashPage(page, replace);
+						applyPage(page);
+					};
+
+					// =========================
+					// toast
+					// =========================
+					const _showSoftToast = (text = "再按一次返回退出") => {
+						let el = document.getElementById("soft-exit-toast");
+						if (!el) {
+							el = document.createElement("div");
+							el.id = "soft-exit-toast";
+							el.className = "soft-exit-toast";
+							document.body.appendChild(el);
+						}
+						el.textContent = text;
+						el.classList.add("show");
+						setTimeout(() => el.classList.remove("show"), 1500);
+					};
+
+					// =========================
+					// cookie helpers
+					// =========================
+					const setCookie = (name, value, days = 30) => {
+						const maxAge = days * 24 * 60 * 60;
+						document.cookie =
+							`${encodeURIComponent(name)}=${encodeURIComponent(value)}; path=/; max-age=${maxAge}`;
+					};
+
+					const getCookieLocal = (name) => {
+						const m = document.cookie.match(new RegExp("(?:^|; )" + name + "=([^;]*)"));
+						return m ? decodeURIComponent(m[1]) : null;
+					};
+
+					// =========================
+					// 场次选择
+					// =========================
+					const openSessionPicker = () => {
+						setTimeout(() => {
+							ShowSessionPicker.value = true;
+						}, 80);
+					};
+
+					const closeSessionPicker = () => {
+						setTimeout(() => {
+							ShowSessionPicker.value = false;
+						}, 80);
+					};
+
+					const setSession = (id) => {
+						setTimeout(() => {
+							const m = (meetings.value || []).find((x) => x && x.id === id);
+							if (!m) return;
+
+							selectedMeetingId.value = id;
+							localStorage.setItem(STORAGE_MEETING_ID_KEY, id);
+							ShowSessionPicker.value = false;
+
+							if (["signup", "ProfileEdit"].includes(currentPage.value)) {
+								go("signup");
+								return;
+							}
+							if (currentPage.value !== "home") go("home");
+						}, 80);
+					};
+
+					// =========================
+					// 关键：已删除 NoInvite/邀请链接判定
+					// =========================
+					const enterSignup = async () => {
+						const login =
+							(typeof getCookieLocal === "function" ? getCookieLocal("offline_status") : null) ||
+							(typeof getCookie === "function" ? getCookie("offline_status") : null) ||
+							"0";
+
+						if (login === "0") {
+							go("signupAuth");
+							return;
+						}
+
+						const id = localStorage.getItem(STORAGE_MEETING_ID_KEY);
+						if (!id) {
+							openSessionPicker();
+							return;
+						}
+
+						go("signup");
+					};
+
+					const enterAccess = async () => {
+						const login = getCookieLocal("offline_status") || "0";
+						if (login === "0") {
+							go("login");
+							return;
+						}
+
+						const id = localStorage.getItem(STORAGE_MEETING_ID_KEY);
+						if (!id) {
+							openSessionPicker();
+							return;
+						}
+
+						const checkinKey = `checkin_${id}`;
+						const checkin = getCookieLocal(checkinKey) || "0";
+						if (checkin === "0") {
+							go("AccessPre1");
+							return;
+						}
+
+						go("Access");
+
+					};
+
+					const goSignupFromAccess = () => {
+						const id = localStorage.getItem(STORAGE_MEETING_ID_KEY);
+						if (!id) {
+							openSessionPicker();
+							return;
+						}
+						go("signup");
+
+					};
+
+					// =========================
+					// 登录/发码（保留外部函数调用）
+					// =========================
+					const getCode = async () => {
+						if (codeCountdown.value > 0 || _gettingCode.value) return;
+						if (typeof startCountdown === "function") startCountdown(proxyLike());
+
+						_gettingCode.value = true;
+						let success = false;
+						try {
+							const phone = (form?.mobile ?? "").trim();
+							const err =
+								typeof validatePhone === "function" ?
+								validatePhone(phone) :
+								!/^1[3-9]\d{9}$/.test(phone) ?
+								"手机号格式不正确" :
+								"";
+							if (err) throw new Error(err);
+							if (typeof sendPhoneCode === "function") await sendPhoneCode(phone);
+							success = true;
+						} catch (e) {
+							alert(e?.message || "验证码发送失败，请稍后重试");
+						} finally {
+							_gettingCode.value = false;
+							if (!success) {
+								codeCountdown.value = 0;
+								if (_codeTimer.value) {
+									clearInterval(_codeTimer.value);
+									_codeTimer.value = null;
+								}
+							}
+						}
+					};
+
+					const submitSignup = async () => {
+						if (loginLock.value) return;
+						loginLock.value = true;
+						try {
+							if (typeof doSignupLoginFlow === "function") await doSignupLoginFlow(proxyLike());
+							// 成功后：进入当前场次报名页
+							const id = localStorage.getItem(STORAGE_MEETING_ID_KEY);
+							if (id) go("signup");
+							else openSessionPicker();
+
+						} catch (e) {
+							alert(e?.message || "登录失败，请稍后再试");
+						} finally {
+							setTimeout(() => {
+								loginLock.value = false;
+							}, 250);
+						}
+					};
+
+					const getLoginCode = async () => {
+						if (codeCountdown.value > 0) return;
+						if (typeof startCountdown === "function") startCountdown(proxyLike());
+
+						try {
+							const phone = (loginForm?.mobile ?? "").trim();
+							const err =
+								typeof validatePhone === "function" ?
+								validatePhone(phone) :
+								!/^1[3-9]\d{9}$/.test(phone) ?
+								"手机号格式不正确" :
+								"";
+							if (err) throw new Error(err);
+							if (typeof sendPhoneCode === "function") await sendPhoneCode(phone);
+						} catch (e) {
+							try {
+								if (typeof clearCountdown === "function") clearCountdown(proxyLike());
+							} catch {}
+							codeCountdown.value = 0;
+							if (_codeTimer.value) {
+								clearInterval(_codeTimer.value);
+								_codeTimer.value = null;
+							}
+							alert(e?.message || "验证码发送失败，请稍后重试");
+						}
+					};
+
+					const submitLogin = async () => {
+						if (loginLock.value) return;
+						loginLock.value = true;
+						try {
+							if (typeof doLoginFlow === "function") await doLoginFlow(proxyLike());
+							enterAccess();
+						} catch (e) {
+							alert(e?.message || "登录失败，请稍后再试");
+						} finally {
+							setTimeout(() => {
+								loginLock.value = false;
+							}, 250);
+						}
+					};
+
+					// =========================
+					// 报名提交（保留外部依赖调用）
+					// =========================
+					const submitSignup2 = async () => {
+						if (submitLock.value) return;
+						submitLock.value = true;
+
+						try {
+							if (
+								typeof validateEntry === "function" &&
+								typeof getPlaceFromSession === "function" &&
+								typeof buildVisitorInfoDataList === "function"
+							) {
+								const {
+									authToken,
+									userMobile
+								} = validateEntry(proxyLike());
+								const {
+									sessionKey,
+									place
+								} = getPlaceFromSession(proxyLike());
+								if (!place) throw new Error("请先选择会议场次");
+
+								const visitorInfoDataList = buildVisitorInfoDataList();
+								const {
+									headers,
+									timestamp
+								} = buildSignedHeaders(authToken, userMobile, place);
+
+								const hasSubmitted = await checkHasSubmitted(headers);
+								let customerId = getCookieLocal("customerId");
+
+								if (hasSubmitted && !customerId) {
+									customerId = await ensureCustomerId("", headers);
+									if (!customerId) throw new Error("缺少客户ID，无法更新，请重新登录");
+								}
+
+								const basePayload = {
+									place,
+									timestamp,
+									visitorInfoDataList
+								};
+								await postAppointmentOrUpdate({
+									headers,
+									basePayload,
+									hasSubmitted,
+									customerId
+								});
+
+								await persistAfterSuccess({
+									sessionKey,
+									vm: proxyLike()
+								});
+								go("status");
+							} else {
+								const id = localStorage.getItem(STORAGE_MEETING_ID_KEY);
+								if (!id) {
+									openSessionPicker();
+									submitLock.value = false;
+									return;
+								}
+								setCookie(`checkin_${id}`, "1");
+								go("status");
+
+							}
+						} catch (e) {
+							alert(e?.message || "提交失败，请稍后重试");
+						} finally {
+							submitLock.value = false;
+						}
+					};
+
+					// =========================
+					// 出席人员 CRUD（本地存储）
+					// =========================
+					const _n = (v) => (v == null ? "" : String(v)).trim().replace(/\s+/g, " ").toLowerCase();
+
+					const fingerprint = (p) => [_n(p.name), _n(p.mobile), _n(p.company), _n(p.title)].join("|");
+
+					const _indexByFingerprint = (fp) => {
+						const arr = attendees.value;
+						if (!Array.isArray(arr)) return -1;
+						for (let i = 0; i < arr.length; i++) {
+							if (fingerprint(arr[i]) === fp) return i;
+						}
+						return -1;
+					};
+
+					const _attendeesStoreKey = "attendees_by_meeting";
+
+					const _readAllAttendees = () => {
+						try {
+							const raw = localStorage.getItem(_attendeesStoreKey);
+							if (!raw) return {};
+							const parsed = JSON.parse(raw);
+							return parsed && typeof parsed === "object" ? parsed : {};
+						} catch {
+							return {};
+						}
+					};
+
+
+					const loadAttendeesBySession = () => {
+						const id = currentMeetingIdByPage();
+						const all = _readAllAttendees();
+						const arr = all?.[id] || [];
+						attendees.value = Array.isArray(arr) ? arr : [];
+					};
+
+					const _persistAttendees = () => {
+						const id = currentMeetingIdByPage();
+						const all = _readAllAttendees();
+						all[id] = Array.isArray(attendees.value) ? attendees.value : [];
+						localStorage.setItem(_attendeesStoreKey, JSON.stringify(all));
+					};
+
+
+					const openCreateProfile = () => {
+						const cookieMobile = document.cookie.match(/offline_mobile=([^;]+)/)?.[1] || "";
+						Object.assign(editing, {
+							name: "",
+							gender: "男",
+							mobile: decodeURIComponent(cookieMobile || ""),
+							company: "",
+							title: "",
+							needHotel: "no",
+							hotelPlan: "示例主办方预定房间",
+							hotelDate: [],
+							carNo: "",
+						});
+						_editingOriginFP.value = "";
+
+						go("ProfileEdit");
+					};
+
+					const openEditProfile = (profile) => {
+						if (!profile) return;
+						const copy = JSON.parse(JSON.stringify(profile));
+						if (typeof copy.needHotel === "boolean") copy.needHotel = copy.needHotel ? "yes" : "no";
+						Object.assign(editing, copy);
+						_editingOriginFP.value = fingerprint(profile);
+
+						go("ProfileEdit");
+					};
+
+					const validateProfileBySession = (profile) => {
+						if (!profile.name) return "请填写姓名";
+						if (!profile.company) return "请填写公司名称";
+						if (!profile.title) return "请填写职位";
+						if (profile.mobile && !/^1[3-9]\d{9}$/.test(profile.mobile)) return "手机号格式不正确";
+						if (profile.needHotel === "yes" && (!profile.hotelDate || !profile.hotelDate.length))
+							return "请选择住宿日期";
+						return "";
+					};
+
+
+					const saveProfile = () => {
+						const a = editing || {};
+						const err = validateProfileBySession(a);
+						if (err) return alert(err);
+
+						const needHotelBool = a.needHotel === "yes" || a.needHotel === true;
+						if (!needHotelBool) {
+							a.hotelPlan = "";
+							a.hotelDate = [];
+						} else {
+							a.hotelDate = Array.isArray(a.hotelDate) ? a.hotelDate.slice() : [];
+							if (!a.hotelPlan) a.hotelPlan = "示例主办方预定房间";
+						}
+
+						const copy = {
+							...a,
+							needHotel: needHotelBool
+						};
+
+						if (!Array.isArray(attendees.value)) attendees.value = [];
+
+						let idx = _editingOriginFP.value ? _indexByFingerprint(_editingOriginFP.value) : -1;
+						if (idx >= 0) attendees.value.splice(idx, 1, copy);
+						else {
+							const newFP = fingerprint(copy);
+							const dupIdx = _indexByFingerprint(newFP);
+							if (dupIdx >= 0) attendees.value.splice(dupIdx, 1, copy);
+							else attendees.value.push(copy);
+						}
+
+						_persistAttendees();
+						_editingOriginFP.value = "";
+
+						go("signup");
+					};
+
+					const removeProfile = (profile) => {
+						if (!profile) return;
+						if (!confirm("确认删除该出席人员吗？")) return;
+
+						const isEditingPage = currentPage.value === "ProfileEdit";
+						const fp = isEditingPage && _editingOriginFP.value ? _editingOriginFP.value : fingerprint(
+							profile);
+						const idx = _indexByFingerprint(fp);
+						if (idx < 0) return alert("未找到要删除的记录");
+
+						attendees.value.splice(idx, 1);
+						_persistAttendees();
+
+						if (isEditingPage) {
+							go("signup");
+						}
+					};
+
+					const autoSelectDate = (place) => {
+						const hotelDates = meetings.value?.[place]?.hotelDates || [];
+						if (editing.needHotel === "yes") {
+							editing.hotelDate = hotelDates.length ? [hotelDates[0]] : [];
+							editing.hotelPlan = "示例主办方预定房间";
+						} else {
+							editing.hotelDate = [];
+							editing.hotelPlan = "";
+						}
+					};
+
+					const humanizeNights = (list) => (list || []).join("、");
+
+					// =========================
+					// QR（离线演示：只做容器渲染）
+					// =========================
+					const _waitForEl = (selector, maxTries = 10, intervalMs = 50) => {
+						return new Promise((resolve) => {
+							let tries = 0;
+							const tryFind = () => {
+								nextTick(() => {
+									const el = document.querySelector(selector);
+									if (el) return resolve(el);
+									tries++;
+									if (tries >= maxTries) return resolve(null);
+									setTimeout(tryFind, intervalMs);
+								});
+							};
+							tryFind();
+						});
+					};
+
+					const initAccessQR = async () => {
+						try {
+							// 有你自己的 fetchAndStoreQrCode 就用；没有就用 cookie qrCode
+							let qrData = "";
+							if (typeof fetchAndStoreQrCode === "function") {
+								const authToken = (typeof getCookie === "function" ? getCookie("offline_auth") :
+									getCookieLocal("offline_auth"));
+								const customerId = (typeof getCookie === "function" ? getCookie("customerId") :
+									getCookieLocal("customerId"));
+								const data = await fetchAndStoreQrCode(authToken, customerId);
+								qrData = data?.qrCode || getCookieLocal("qrCode") || "";
+							} else {
+								qrData = getCookieLocal("qrCode") || "DEMO_QR_CODE";
+							}
+
+							if (!qrData) {
+								alert("未获取到二维码数据");
+								return;
+							}
+
+							qrUrl.value = "";
+							const el = await _waitForEl("#qrcode-box", 10, 50);
+							if (!el) return;
+
+							el.innerHTML = "";
+							const size = Math.min(el.clientWidth || 200, el.clientHeight || 200) || 200;
+							new QRCode(el, {
+								text: qrData,
+								width: size,
+								height: size,
+								correctLevel: QRCode.CorrectLevel.H,
+							});
+						} catch (e) {
+							console.error(e);
+							alert("二维码加载失败，请稍后重试");
+						}
+					};
+
+					const loadAccessQR = () => initAccessQR();
+
+					// =========================
+					// watch：等价于原 watch currentPage
+					// =========================
+					watch(currentPage, (v) => {
+						if (v === "Access") loadAccessQR();
+						if (v === "signup") loadAttendeesBySession();
+					});
+
+					// =========================
+					// mounted / beforeUnmount
+					// =========================
+					onMounted(() => {
+						const p = _getHashPage();
+						currentPage.value = pagesOrder.value.includes(p) ? p : "home";
+						lastPage.value = currentPage.value;
+
+						if (!location.hash) _setHashPage(currentPage.value, true);
+
+						applyPage(currentPage.value);
+
+						window.addEventListener("hashchange", _onHashChange);
+
+						const cache = localStorage.getItem(STORAGE_MEETING_ID_KEY);
+						const first = (meetings.value || [])[0]?.id || "";
+
+						if (cache && (meetings.value || []).some((m) => m && m.id === cache)) {
+							selectedMeetingId.value = cache;
+						} else if (first) {
+							selectedMeetingId.value = first;
+							localStorage.setItem(STORAGE_MEETING_ID_KEY, first);
+						} else {
+							ShowSessionPicker.value = true;
+						}
+
+
+						try {
+							history.scrollRestoration = "manual";
+						} catch {}
+					});
+
+					onBeforeUnmount(() => {
+						window.removeEventListener("hashchange", _onHashChange);
+						clearTimeout(_exitTimer.value);
+					});
+
+					// =========================
+					// “伪 this”对象：给你那些外部老函数用（doLoginFlow / startCountdown 等）
+					// （它们可能在内部读写 vm.codeCountdown / vm.form / vm.setCookie...）
+					// =========================
+					const proxyLike = () => ({
+						// state
+						conferenceInfo: conferenceInfo.value,
+						meetings: meetings.value,
+						selectedMeetingId: selectedMeetingId.value,
+
+						ShowSessionPicker: ShowSessionPicker.value,
+
+						pagesOrder: pagesOrder.value,
+						currentPage: currentPage.value,
+						lastPage: lastPage.value,
+						transitionName: transitionName.value,
+
+						_navSeq: _navSeq.value,
+						_suppressStateChange: _suppressStateChange.value,
+						_exitArmed: _exitArmed.value,
+						_exitTimer: _exitTimer.value,
+
+						form,
+						loginType: loginType.value,
+						loginForm,
+						signupType: signupType.value,
+
+						codeCountdown: codeCountdown.value,
+						codeTimer: codeTimer.value,
+						loginLock: loginLock.value,
+						submitLock: submitLock.value,
+						isDisabled: isDisabled.value,
+
+						attendees: attendees.value,
+						editing,
+						_editingOriginFP: _editingOriginFP.value,
+
+						qrUrl: qrUrl.value,
+
+						go,
+						applyPage,
+						openSessionPicker,
+						closeSessionPicker,
+						setSession,
+						enterSignup,
+						enterAccess,
+						goSignupFromAccess,
+						setCookie,
+						getCookie: getCookieLocal,
+
+						set codeCountdown(v) {
+							codeCountdown.value = v;
+						},
+						set loginLock(v) {
+							loginLock.value = v;
+						},
+						set submitLock(v) {
+							submitLock.value = v;
+						},
+
+						set currentPage(v) {
+							currentPage.value = v;
+						},
+						set lastPage(v) {
+							lastPage.value = v;
+						},
+						set transitionName(v) {
+							transitionName.value = v;
+						},
+
+						$nextTick: nextTick,
+					});
+
+					// =========================
+					// expose to template
+					// =========================
+					return {
+						// data
+						conferenceInfo,
+						meetings,
+						selectedMeetingId,
+						ShowSessionPicker,
+
+						pagesOrder,
+						currentPage,
+						lastPage,
+						transitionName,
+
+						form,
+						loginType,
+						loginForm,
+						signupType,
+
+						codeCountdown,
+						loginLock,
+						submitLock,
+						isDisabled,
+
+						attendees,
+						editing,
+
+						qrUrl,
+
+						// computed
+						selectedSession,
+						sessionList,
+						hotelDateOptions,
+
+						// methods
+						pageIndex,
+						setTransitionByDirection,
+						_getHashPage,
+						_setHashPage,
+						_syncFromHash,
+						_onHashChange,
+
+						applyPage,
+						go,
+
+						_showSoftToast,
+
+						setCookie,
+						getCookie: getCookieLocal,
+
+						openSessionPicker,
+						closeSessionPicker,
+						currentMeetingIdByPage,
+						setSession,
+
+						enterSignup,
+						enterAccess,
+						goSignupFromAccess,
+
+						getCode,
+						submitSignup,
+						getLoginCode,
+						submitLogin,
+
+						submitSignup2,
+
+						_n,
+						fingerprint,
+						_indexByFingerprint,
+						loadAttendeesBySession,
+						_persistAttendees,
+						openCreateProfile,
+						openEditProfile,
+						validateProfileBySession,
+						saveProfile,
+						removeProfile,
+						autoSelectDate,
+						humanizeNights,
+
+						loadAccessQR,
+						initAccessQR,
+						_waitForEl,
+					};
+				},
+			};
+
+			Vue.createApp(App).mount("#app");
+		</script>
+	</body>
+</html>

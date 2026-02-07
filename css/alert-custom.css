@@ -1,0 +1,32 @@
+.custom-popup {
+	position: fixed;
+	left: 50%;
+	bottom: 60px;
+	transform: translate(-50%, 8px);
+	background: rgba(0, 0, 0, 0.6);
+	color: #fff;
+	padding: 8px 20px;
+	font-size: 12px;
+	border-radius: 4px;
+	box-shadow: 0 6px 18px rgba(0, 0, 0, 0.05);
+	z-index: 2147483647;
+	/* 顶层 */
+	opacity: 0;
+	transition: opacity .25s ease, transform .25s ease;
+	pointer-events: auto;
+	-webkit-tap-highlight-color: transparent;
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, "Noto Sans SC", sans-serif;
+	user-select: none;
+	will-change: transform, opacity;
+}
+
+.custom-popup.show {
+	opacity: 1;
+	transform: translate(-50%, 0);
+}
+
+@media (prefers-color-scheme: light) {
+	.custom-popup {
+		background: rgba(0, 0, 0, 0.6);
+	}
+}
